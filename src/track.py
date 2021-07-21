@@ -104,18 +104,16 @@ def write_results_score(filename, results, data_type):
     logger.info('save results to {}'.format(filename))
 
 
-def eval_seq(opt, dataloader, data_type, result_filename, save_dir=None, show_image=True, frame_rate=30, use_cuda=True):
+def eval_seq(opt, dataloader, data_type, result_filename, result_jsonl_filename, save_dir=None, show_image=True, frame_rate=30, use_cuda=True):
     if save_dir:
         mkdir_if_missing(save_dir)
     tracker = JDETracker(opt, frame_rate=frame_rate)
     timer = Timer()
     results = []
+    results_reid = []
     frame_id = 0
 
     for i, (path, img, img0) in enumerate(dataloader):
-        # if i >= 50:
-        #     break
-
         if frame_id % 20 == 0:
             logger.info('Processing frame {} ({:.2f} fps)'.format(frame_id, 1. / max(1e-5, timer.average_time)))
 
@@ -142,7 +140,8 @@ def eval_seq(opt, dataloader, data_type, result_filename, save_dir=None, show_im
                 # online_scores.append(t.score)
         timer.toc()
         # save results
-        results.append((frame_id + 1, online_tlwhs, online_ids, online_reids))
+        results.append((frame_id + 1, online_tlwhs, online_ids))
+        results_reid.append((frame_id + 1, online_tlwhs, online_ids, online_reids))
         # results.append((frame_id + 1, online_tlwhs, online_ids, online_scores))
         if show_image or save_dir is not None:
             online_im = vis.plot_tracking(img0, online_tlwhs, online_ids, frame_id=frame_id,
@@ -153,7 +152,8 @@ def eval_seq(opt, dataloader, data_type, result_filename, save_dir=None, show_im
             cv2.imwrite(os.path.join(save_dir, '{:05d}.jpg'.format(frame_id)), online_im)
         frame_id += 1
     # save results
-    write_results_reid(result_filename, results, data_type)
+    write_results(result_filename, results, data_type)
+    write_results_reid(result_jsonl_filename, results_reid, data_type)
     #write_results_score(result_filename, results, data_type)
     return frame_id, timer.average_time, timer.calls
 
@@ -166,6 +166,7 @@ def main(opt, data_root, seqs, exp_name: str, result_root: str,
     data_type = 'mot'
 
     # run tracking
+    seqs = sorted(seqs)
     accs = []
     n_frame = 0
     timer_avgs, timer_calls = [], []
@@ -173,42 +174,45 @@ def main(opt, data_root, seqs, exp_name: str, result_root: str,
         output_dir = os.path.join(data_root, 'outputs', exp_name, seq) if save_images or save_videos else None
         logger.info('start seq: {}'.format(seq))
         dataloader = datasets.LoadImages(osp.join(data_root, seq, 'img1'), opt.img_size)
-        result_filename = os.path.join(result_root, '{}.jsonl'.format(seq))
+        result_filename = os.path.join(result_root, '{}.txt'.format(seq))
+        result_jsonl_filename = os.path.join(result_root, '{}.jsonl'.format(seq))
         meta_info = open(os.path.join(data_root, seq, 'seqinfo.ini')).read()
         frame_rate = int(meta_info[meta_info.find('frameRate') + 10:meta_info.find('\nseqLength')])
         if os.path.exists(result_filename):
             os.remove(result_filename)
-        nf, ta, tc = eval_seq(opt, dataloader, data_type, result_filename, save_dir=output_dir, show_image=show_image, frame_rate=frame_rate)
+        if os.path.exists(result_jsonl_filename):
+            os.remove(result_jsonl_filename)
+        nf, ta, tc = eval_seq(opt, dataloader, data_type, result_filename, result_jsonl_filename, save_dir=output_dir, show_image=show_image, frame_rate=frame_rate)
 
         n_frame += nf
         timer_avgs.append(ta)
         timer_calls.append(tc)
 
         # eval
-        # logger.info('Evaluate seq: {}'.format(seq))
-        # evaluator = Evaluator(data_root, seq, data_type)
-        # accs.append(evaluator.eval_file(result_filename))
-        # if save_videos:
-        #     output_video_path = osp.join(output_dir, '{}.mp4'.format(seq))
-        #     cmd_str = 'ffmpeg -f image2 -i {}/%05d.jpg -c:v copy {}'.format(output_dir, output_video_path)
-        #     os.system(cmd_str)
-    # timer_avgs = np.asarray(timer_avgs)
-    # timer_calls = np.asarray(timer_calls)
-    # all_time = np.dot(timer_avgs, timer_calls)
-    # avg_time = all_time / np.sum(timer_calls)
-    # logger.info('Time elapsed: {:.2f} seconds, FPS: {:.2f}'.format(all_time, 1.0 / avg_time))
+        logger.info('Evaluate seq: {}'.format(seq))
+        evaluator = Evaluator(data_root, seq, data_type)
+        accs.append(evaluator.eval_file(result_filename))
+        if save_videos:
+            output_video_path = osp.join(output_dir, '{}.mp4'.format(seq))
+            cmd_str = 'ffmpeg -f image2 -i {}/%05d.jpg -c:v copy {}'.format(output_dir, output_video_path)
+            os.system(cmd_str)
+    timer_avgs = np.asarray(timer_avgs)
+    timer_calls = np.asarray(timer_calls)
+    all_time = np.dot(timer_avgs, timer_calls)
+    avg_time = all_time / np.sum(timer_calls)
+    logger.info('Time elapsed: {:.2f} seconds, FPS: {:.2f}'.format(all_time, 1.0 / avg_time))
 
     # get summary
-    # metrics = mm.metrics.motchallenge_metrics
-    # mh = mm.metrics.create()
-    # summary = Evaluator.get_summary(accs, seqs, metrics)
-    # strsummary = mm.io.render_summary(
-    #     summary,
-    #     formatters=mh.formatters,
-    #     namemap=mm.io.motchallenge_metric_names
-    # )
-    # print(strsummary)
-    # Evaluator.save_summary(summary, os.path.join(result_root, 'summary_{}.xlsx'.format(exp_name)))
+    metrics = mm.metrics.motchallenge_metrics
+    mh = mm.metrics.create()
+    summary = Evaluator.get_summary(accs, seqs, metrics)
+    strsummary = mm.io.render_summary(
+        summary,
+        formatters=mh.formatters,
+        namemap=mm.io.motchallenge_metric_names
+    )
+    print(strsummary)
+    Evaluator.save_summary(summary, os.path.join(result_root, 'summary_{}.xlsx'.format(exp_name)))
 
 
 if __name__ == '__main__':

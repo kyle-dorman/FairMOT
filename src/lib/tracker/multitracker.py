@@ -37,11 +37,11 @@ class STrack(BaseTrack):
         self.score = score
         self.tracklet_len = 0
 
-        self.smooth_feat = None
+        self.smooth_feat: Optional[np.ndarray] = None
+        self.curr_feat: Optional[np.ndarray] = None
         self.update_features(temp_feat)
         self.features = deque([], maxlen=buffer_size)
         self.alpha = 0.9
-        self.curr_feat: Optional[np.ndarray] = None
 
     def update_features(self, feat):
         feat /= np.linalg.norm(feat)
@@ -67,7 +67,8 @@ class STrack(BaseTrack):
             for i, st in enumerate(stracks):
                 if st.state != TrackState.Tracked:
                     multi_mean[i][7] = 0
-            multi_mean, multi_covariance = STrack.shared_kalman.multi_predict(multi_mean, multi_covariance)
+            multi_mean, multi_covariance = STrack.shared_kalman.multi_predict(
+                multi_mean, multi_covariance)
             for i, (mean, cov) in enumerate(zip(multi_mean, multi_covariance)):
                 stracks[i].mean = mean
                 stracks[i].covariance = cov
@@ -199,6 +200,7 @@ class JDETracker(object):
         self.max_per_image = opt.K
         self.mean = np.array(opt.mean, dtype=np.float32).reshape((1, 1, 3))
         self.std = np.array(opt.std, dtype=np.float32).reshape((1, 1, 3))
+        self.skip_reid = opt.skip_reid
 
         self.kalman_filter = KalmanFilter()
 
@@ -294,14 +296,17 @@ class JDETracker(object):
             else:
                 tracked_stracks.append(track)
 
-        ''' Step 2: First association, with embedding'''
         strack_pool = joint_stracks(tracked_stracks, self.lost_stracks)
+
+        ''' Step 2: First association, with embedding'''
         # Predict the current location with KF
-        #for strack in strack_pool:
-            #strack.predict()
+        # for strack in strack_pool:
+        # strack.predict()
         STrack.multi_predict(strack_pool)
-        dists = matching.embedding_distance(strack_pool, detections)
-        #dists = matching.iou_distance(strack_pool, detections)
+        if self.skip_reid:
+            dists = matching.iou_distance(strack_pool, detections)
+        else:
+            dists = matching.embedding_distance(strack_pool, detections)
         dists = matching.fuse_motion(self.kalman_filter, dists, strack_pool, detections)
         matches, u_track, u_detection = matching.linear_assignment(dists, thresh=0.4)
 
@@ -309,7 +314,7 @@ class JDETracker(object):
             track = strack_pool[itracked]
             det = detections[idet]
             if track.state == TrackState.Tracked:
-                track.update(detections[idet], self.frame_id)
+                track.update(det, self.frame_id)
                 activated_starcks.append(track)
             else:
                 track.re_activate(det, self.frame_id, new_id=False)
