@@ -29,7 +29,7 @@ enable_gpu = --gpus all
 docker_run_args = --ipc=host
 volumes = -v ${HOME}/.netrc:/root/.netrc \
           -v ${HOME}/.bash_history:/root/.bash_history \
-		  -v ${HOME}/data:/app/data \
+		  -v ${HOME}/reid-track-fixing-data:/app/data \
 		  -v $(shell pwd):/app/FairMOT
 user_id = $(shell id -u)
 group_id = $(shell id -g)

@@ -12,6 +12,8 @@ import numpy as np
 import torch
 import copy
 
+import _init_paths
+
 from torch.utils.data import Dataset
 from torchvision.transforms import transforms as T
 from cython_bbox import bbox_overlaps as bbox_ious

@@ -11,6 +11,8 @@ import torch
 import cv2
 import torch.nn.functional as F
 
+import _init_paths
+
 from models.model import create_model, load_model
 from models.decode import mot_decode
 from tracking_utils.utils import *
