@@ -106,6 +106,46 @@ class SavedDetection:
         return np.array([self.y1, self.x1, self.y1 + self.h, self.x1 + self.w])
 
 
+@dataclasses.dataclass
+class GroundTruth:
+    frame: int
+    tracking_id: int
+    x1: float
+    y1: float
+    w: float
+    h: float
+    zero_marked: int
+    class_id: int
+
+    @classmethod
+    def from_str(cls, str_line: str) -> "GroundTruth":
+        lines = str_line.split(",")
+        return GroundTruth(
+            int(lines[0]),
+            int(lines[1]),
+            float(lines[2]),
+            float(lines[3]),
+            float(lines[4]),
+            float(lines[5]),
+            int(lines[6]),
+            int(lines[7]),
+        )
+
+    @property
+    def mot_txt(self) -> str:
+        """
+        Save in MOT txt format
+        """
+        return f"{self.frame},{self.tracking_id},{self.x1},{self.y1},{self.w},{self.h},1,-1,-1,-1"
+
+    @property
+    def tlbr(self) -> np.ndarray:
+        """
+        Return the bounding box coordinates in format top, left, bottom, right
+        """
+        return np.array([self.y1, self.x1, self.y1 + self.h, self.x1 + self.w])
+
+
 def get_image_path(img_directory: Path, frame: int, ext: str) -> Path:
     return img_directory / f"{frame:06d}{ext}"
 
@@ -164,6 +204,29 @@ def txt_detections_generator(det_file_path: Path) -> Generator[List[SavedDetecti
     return detections_generator(det_file_path, txt_detections_parser)
 
 
+def ground_truth_generator(gt_file_path: Path) -> Generator[List[SavedDetection], None, None]:
+    """
+    Given a ground truth file, load all ground truths for that file. Grouping gts for each frame.
+    If no gts for that frame, an empty list is returned. Gts in file do not have to be in frame
+    order. (Some were not in order in the MOT data!)
+    """
+    assert os.path.exists(str(gt_file_path))
+
+    frame_gts = defaultdict(list)
+
+    with open(gt_file_path) as f:
+        for line in f.readlines():
+            gt = GroundTruth.from_str(line)
+            if gt.class_id != 1 or gt.zero_marked == 0:
+                continue
+
+            det = SavedDetection(gt.frame, gt.tracking_id, gt.x1, gt.y1, gt.w, gt.h, 1.0)
+            frame_gts[gt.frame].append(det)
+
+    for frame_num in range(1, max(frame_gts.keys()) + 1):
+        yield frame_gts.get(frame_num, [])
+
+
 def crops_generator(
     seq_directory: Path,
     seq_detections: Generator[List[SavedDetection], None, None],
@@ -191,16 +254,8 @@ def crops_generator(
             for det in dets:
                 img1 = cropped_image(img0, det, seq_info)
 
-                # Padded image
-                width = max(opt.input_w - img1.shape[1], 0)
-                height = max(opt.input_h - img1.shape[0], 0)
-                w_left = width // 2
-                w_right = width - w_left
-                h_top = height // 2
-                h_bottom = height - h_top
-                img = cv2.copyMakeBorder(
-                    img1, h_top, h_bottom, w_left, w_right, cv2.BORDER_CONSTANT,
-                    value=(127.5, 127.5, 127.5))
+                # Padded resize
+                img, _, _, _ = letterbox(img1, height=opt.input_h, width=opt.input_w)
 
                 # Normalize RGB
                 img = img[:, :, ::-1].transpose(2, 0, 1)
@@ -296,7 +351,15 @@ def gen_reids(
     with open(save_path, "w") as f:
         for img_dets in tqdm(crops_gen, total=info.sequence_length):
             for det, img in img_dets:
-                dets, id_features = run_model(model, use_cuda, img, opt)
+                assert img.shape[1] == opt.input_h, (det, img.shape, (opt.input_h, opt.input_w))
+                assert img.shape[2] == opt.input_w, (det, img.shape, (opt.input_h, opt.input_w))
+
+                try:
+                    dets, id_features = run_model(model, use_cuda, img, opt)
+                except:
+                    print("failed to gen reid for det", det)
+                    dets = np.zeros((0,))
+
                 if dets.size == 0:
                     reid = np.zeros((opt.reid_dim,), dtype=np.float64)
                 else:
@@ -336,16 +399,20 @@ def run_all_seqs(opt: Namespace, data_root: Path, seqs: List[str]):
 
         gen = crops_generator(data_root / seq, gen_dets, opt)
         info = SeqInfo.from_path(data_root / seq)
-        save_path = Path(opt.data_dir) / "experiments" / opt.exp_id / f"{info.name}.jsonl"
+        short_seq_name = "-".join(info.name.split("-")[:2])
+        if short_seq_name == info.name:
+            model = "FRCNN"
+        else:
+            model = info.name.split("-")[-1]
+
+        save_path = Path(opt.data_dir) / "experiments" / f"{model}_{opt.exp_id}" / f"{short_seq_name}.jsonl"
         gen_reids(model, use_cuda, gen, info, opt, save_path)
 
         if "train" in str(data_root) and ("MOT20" in seq or "SDP" in seq):
-            gen_gts = txt_detections_generator(data_root / seq / "gt" / "gt.txt")
+            gen_gts = ground_truth_generator(data_root / seq / "gt" / "gt.txt")
 
             gen = crops_generator(data_root / seq, gen_gts, opt)
-            info = SeqInfo.from_path(data_root / seq)
-            name = info.name.replace("-SDP", "")
-            save_path = Path(opt.data_dir) / "experiments" / opt.exp_id / f"{name}-gt.jsonl"
+            save_path = Path(opt.data_dir) / "experiments" / f"gt_{opt.exp_id}" / f"{short_seq_name}.jsonl"
             gen_reids(model, use_cuda, gen, info, opt, save_path)
 
 

@@ -164,11 +164,12 @@ def main(opt, data_root, seqs, exp_name: str, result_root: str,
     n_frame = 0
     timer_avgs, timer_calls = [], []
     for seq in seqs:
+        short_seq_name = "-".join(seq.split("-")[:2])
         output_dir = os.path.join(data_root, 'outputs', exp_name, seq) if save_images or save_videos else None
         logger.info('start seq: {}'.format(seq))
         dataloader = datasets.LoadImages(osp.join(data_root, seq, 'img1'), opt.img_size)
-        result_filename = os.path.join(result_root, '{}.txt'.format(seq))
-        result_jsonl_filename = os.path.join(result_root, '{}.jsonl'.format(seq))
+        result_filename = os.path.join(result_root, '{}.txt'.format(short_seq_name))
+        result_jsonl_filename = os.path.join(result_root, '{}.jsonl'.format(short_seq_name))
         meta_info = open(os.path.join(data_root, seq, 'seqinfo.ini')).read()
         frame_rate = int(meta_info[meta_info.find('frameRate') + 10:meta_info.find('\nseqLength')])
         if os.path.exists(result_filename):

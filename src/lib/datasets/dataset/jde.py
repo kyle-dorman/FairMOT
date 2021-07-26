@@ -248,6 +248,8 @@ def letterbox(img, height=608, width=1088,
     new_shape = (round(shape[1] * ratio), round(shape[0] * ratio))  # new_shape = [width, height]
     dw = (width - new_shape[0]) / 2  # width padding
     dh = (height - new_shape[1]) / 2  # height padding
+    assert dw >= 0
+    assert dh >= 0
     top, bottom = round(dh - 0.1), round(dh + 0.1)
     left, right = round(dw - 0.1), round(dw + 0.1)
     img = cv2.resize(img, new_shape, interpolation=cv2.INTER_AREA)  # resized, no border
