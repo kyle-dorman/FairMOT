@@ -353,12 +353,7 @@ def gen_reids(
             for det, img in img_dets:
                 assert img.shape[1] == opt.input_h, (det, img.shape, (opt.input_h, opt.input_w))
                 assert img.shape[2] == opt.input_w, (det, img.shape, (opt.input_h, opt.input_w))
-
-                try:
-                    dets, id_features = run_model(model, use_cuda, img, opt)
-                except:
-                    print("failed to gen reid for det", det)
-                    dets = np.zeros((0,))
+                dets, id_features = run_model(model, use_cuda, img, opt)
 
                 if dets.size == 0:
                     reid = np.zeros((opt.reid_dim,), dtype=np.float64)
@@ -395,24 +390,28 @@ def run_all_seqs(opt: Namespace, data_root: Path, seqs: List[str]):
 
     for seq in seqs:
         print("Generating", seq)
-        gen_dets = txt_detections_generator(data_root / seq / "det" / "det.txt")
-
-        gen = crops_generator(data_root / seq, gen_dets, opt)
         info = SeqInfo.from_path(data_root / seq)
+
         short_seq_name = "-".join(info.name.split("-")[:2])
         if short_seq_name == info.name:
-            model = "FRCNN"
+            model_name = "FRCNN"
         else:
-            model = info.name.split("-")[-1]
+            model_name = info.name.split("-")[-1]
 
-        save_path = Path(opt.data_dir) / "experiments" / f"{model}_{opt.exp_id}" / f"{short_seq_name}.jsonl"
+        save_path = Path(
+            opt.data_dir) / "experiments" / f"{model_name}_{opt.exp_id}" / f"{short_seq_name}.jsonl"
+
+        gen_dets = txt_detections_generator(data_root / seq / "det" / "det.txt")
+        gen = crops_generator(data_root / seq, gen_dets, opt)
+
         gen_reids(model, use_cuda, gen, info, opt, save_path)
 
         if "train" in str(data_root) and ("MOT20" in seq or "SDP" in seq):
-            gen_gts = ground_truth_generator(data_root / seq / "gt" / "gt.txt")
+            save_path = Path(
+                opt.data_dir) / "experiments" / f"gt_{opt.exp_id}" / f"{short_seq_name}.jsonl"
 
+            gen_gts = ground_truth_generator(data_root / seq / "gt" / "gt.txt")
             gen = crops_generator(data_root / seq, gen_gts, opt)
-            save_path = Path(opt.data_dir) / "experiments" / f"gt_{opt.exp_id}" / f"{short_seq_name}.jsonl"
             gen_reids(model, use_cuda, gen, info, opt, save_path)
 
 
@@ -448,4 +447,4 @@ if __name__ == "__main__":
     assert _data_root is not None
     assert _seqs is not None
 
-    run_all_seqs(_opt, _data_root, _seqs)
+    run_all_seqs(_opt, _data_root, sorted(_seqs))

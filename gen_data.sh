@@ -48,7 +48,7 @@ python src/extract_reid.py mot --data_dir /app/data --test_mot17 True --load_mod
 
 echo "Done generating reids"
 
-gsutil -m rsync -r /app/data/experiments/gt_reid_fairmot gs://${BUCKET}/experiments/gt_reid_fairmot
-gsutil -m rsync -r /app/data/experiments/FRCNN_reid_fairmot gs://${BUCKET}/experiments/FRCNN_reid_fairmot
-gsutil -m rsync -r /app/data/experiments/SDP_reid_fairmot gs://${BUCKET}/experiments/SDP_reid_fairmot
-gsutil -m rsync -r /app/data/experiments/DPM_reid_fairmot gs://${BUCKET}/experiments/DPM_reid_fairmot
+gsutil -m rsync -d -r /app/data/experiments/gt_reid_fairmot gs://${BUCKET}/experiments/gt_reid_fairmot
+gsutil -m rsync -d -r /app/data/experiments/FRCNN_reid_fairmot gs://${BUCKET}/experiments/FRCNN_reid_fairmot
+gsutil -m rsync -d -r /app/data/experiments/SDP_reid_fairmot gs://${BUCKET}/experiments/SDP_reid_fairmot
+gsutil -m rsync -d -r /app/data/experiments/DPM_reid_fairmot gs://${BUCKET}/experiments/DPM_reid_fairmot
