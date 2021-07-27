@@ -254,8 +254,12 @@ def crops_generator(
             for det in dets:
                 img1 = cropped_image(img0, det, seq_info)
 
-                # Padded resize
-                img, _, _, _ = letterbox(img1, height=opt.input_h, width=opt.input_w)
+                if min(img1.shape[0], img1.shape[1]) < 10:
+                    print("found small image", img1.shape, det)
+                    img = np.zeros((opt.input_h, opt.input_w, 3), dtype=np.float32)
+                else:
+                    # Padded resize
+                    img, _, _, _ = letterbox(img1, height=opt.input_h, width=opt.input_w)
 
                 # Normalize RGB
                 img = img[:, :, ::-1].transpose(2, 0, 1)
@@ -400,6 +404,8 @@ def run_all_seqs(opt: Namespace, data_root: Path, seqs: List[str]):
 
         save_path = Path(
             opt.data_dir) / "experiments" / f"{model_name}_{opt.exp_id}" / f"{short_seq_name}.jsonl"
+        if os.path.exists(save_path):
+            continue
 
         gen_dets = txt_detections_generator(data_root / seq / "det" / "det.txt")
         gen = crops_generator(data_root / seq, gen_dets, opt)
@@ -409,6 +415,8 @@ def run_all_seqs(opt: Namespace, data_root: Path, seqs: List[str]):
         if "train" in str(data_root) and ("MOT20" in seq or "SDP" in seq):
             save_path = Path(
                 opt.data_dir) / "experiments" / f"gt_{opt.exp_id}" / f"{short_seq_name}.jsonl"
+            if os.path.exists(save_path):
+                continue
 
             gen_gts = ground_truth_generator(data_root / seq / "gt" / "gt.txt")
             gen = crops_generator(data_root / seq, gen_gts, opt)
@@ -426,22 +434,22 @@ if __name__ == "__main__":
 
     if _opt.test_mot17:
         _data_root = data_dir / "MOT-benchmark" / 'MOT17/test'
-        seq_search = _data_root / "MOT*"
+        seq_search = _data_root / "MOT17*"
         _seqs = [p.split("/")[-1] for p in glob.glob(str(seq_search))]
 
     if _opt.val_mot17:
         _data_root = data_dir / "MOT-benchmark" / 'MOT17/train'
-        seq_search = _data_root / "MOT*"
+        seq_search = _data_root / "MOT17*"
         _seqs = [p.split("/")[-1] for p in glob.glob(str(seq_search))]
 
     if _opt.val_mot20:
         _data_root = data_dir / "MOT-benchmark" / 'MOT20/train'
-        seq_search = _data_root / "MOT*"
+        seq_search = _data_root / "MOT20*"
         _seqs = [p.split("/")[-1] for p in glob.glob(str(seq_search))]
 
     if _opt.test_mot20:
         _data_root = data_dir / "MOT-benchmark" / 'MOT20/test'
-        seq_search = _data_root / "MOT*"
+        seq_search = _data_root / "MOT20*"
         _seqs = [p.split("/")[-1] for p in glob.glob(str(seq_search))]
 
     assert _data_root is not None
